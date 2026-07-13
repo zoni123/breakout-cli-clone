@@ -1,4 +1,4 @@
 build:
-	gcc main.c -o brickbreaker
+	gcc main.c -o breakout_clone
 clean:
-	rm -f brickbreaker
+	rm -f breakout_clone

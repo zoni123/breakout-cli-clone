@@ -2,6 +2,7 @@
 #include <termios.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -11,18 +12,20 @@
 #define DEFHP 1
 
 typedef struct {
-	int x, y;
+	int32_t x, y;
 } coord_pair;
 
 typedef struct {
-	int hp;
+	int32_t hp;
 } cell;
 
 typedef struct {
+	int32_t size;
 	coord_pair pos, vel;
 } movable;
 
 typedef struct {
+	uint8_t exit;
 	cell bricks[BRICKY][MAPX];
 	movable *player, *ball;
 } cycle_args;
@@ -51,6 +54,8 @@ void set_mode() {
 }
 
 void init_movable(movable *t) {
+	t->size = 1;
+
 	t->pos.x = MAPX / 2;
 	t->pos.y = MAPY - 1;
 
@@ -66,9 +71,10 @@ void init_params(void *args) {
 	cycle->ball->vel.y = -1;
 	cycle->ball->pos.x--;
 	cycle->ball->pos.y--;
+	cycle->exit = 0;
 
-	for (int i = 0; i < BRICKY; i++) {
-		for (int j = 0; j < MAPX; j++) {
+	for (int32_t i = 0; i < BRICKY; i++) {
+		for (int32_t j = 0; j < MAPX; j++) {
 			cell predef = {DEFHP};
 			cycle->bricks[i][j] = predef;
 		}
@@ -77,13 +83,13 @@ void init_params(void *args) {
 
 void draw_game(void *args) {
 	cycle_args *cycle = (cycle_args *)args;
-	for (int i = 0; i < MAPY; i++) {
-		for (int j = 0; j < MAPX; j++) {
+	for (int32_t i = 0; i < MAPY; i++) {
+		for (int32_t j = 0; j < MAPX; j++) {
 			if (i < BRICKY && cycle->bricks[i][j].hp > 0) {
 				printf("-");
 			} else if (i == cycle->ball->pos.y && j == cycle->ball->pos.x) {
 				printf("O");
-			} else if (i == cycle->player->pos.y && j == cycle->player->pos.x) {
+			} else if (i == cycle->player->pos.y && j <= cycle->player->pos.x + cycle->player->size && j >= cycle->player->pos.x - cycle->player->size) {
 				printf("=");
 			} else {
 				printf(" ");
@@ -103,6 +109,10 @@ void *default_cycle(void *args) {
 	while (1) {
 		printf("\033[H\n");
 
+		if (cycle->exit) {
+			return NULL;
+		}
+
 		if (cycle->ball->pos.x + cycle->ball->vel.x >= MAPX || cycle->ball->pos.x + cycle->ball->vel.x < 0) {
 			cycle->ball->vel.x = -cycle->ball->vel.x;
 		}
@@ -116,7 +126,7 @@ void *default_cycle(void *args) {
 			cycle->ball->vel.y = -cycle->ball->vel.y;
                 }
 
-		if (cycle->ball->pos.y + cycle->ball->vel.y == cycle->player->pos.y + cycle->player->vel.y && cycle->ball->pos.x + cycle->ball->vel.x == cycle->player->pos.x + cycle->player->vel.x) {
+		if (cycle->ball->pos.y + cycle->ball->vel.y == cycle->player->pos.y + cycle->player->vel.y && cycle->ball->pos.x + cycle->ball->vel.x <= cycle->player->pos.x + cycle->player->vel.x + cycle->player->size && cycle->ball->pos.x + cycle->ball->vel.x >= cycle->player->pos.x + cycle->player->vel.x - cycle->player->size) {
 			cycle->ball->vel.y = -cycle->ball->vel.y;
 		}
 
@@ -128,16 +138,22 @@ void *default_cycle(void *args) {
 
 void read_key(void *args) {
 	cycle_args *cycle = (cycle_args *)args;
-	char c = 0;
+	uint8_t c = 0;
 	read(STDIN_FILENO, &c, 1);
 
 	if (c == 'a' || c == 'A') {
 		cycle->player->vel.x = -1;
 	} else if (c == 'd' || c == 'D') {
 		cycle->player->vel.x = 1;
+	} else if (c == 27) {
+		cycle->exit = 1;
+	}
+
+	if (cycle->exit) {
+		return;
 	}
 	
-	if (cycle->player->pos.x + cycle->player->vel.x < MAPX && cycle->player->pos.x + cycle->player->vel.x >= 0 && cycle->player->vel.x != 0) {
+	if (cycle->player->pos.x + cycle->player->vel.x + cycle->player->size < MAPX && cycle->player->pos.x + cycle->player->vel.x - cycle->player->size >= 0 && cycle->player->vel.x != 0) {
 		printf("\033[H\n");
 		move(cycle->player);
 		draw_game(args);
@@ -153,13 +169,14 @@ int main(void) {
 	cycle.player = &player;
         cycle.ball = &ball;
 	pthread_t cycle_pt;
+	uint8_t exit = 0;
 
 	init_params(&cycle);
 	set_mode();
 	printf("\033[2J");
 
 	pthread_create(&cycle_pt, NULL, default_cycle, &cycle);
-	while (1) {
+	while (!cycle.exit) {
 		read_key(&cycle);
 	}
 
