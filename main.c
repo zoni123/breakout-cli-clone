@@ -5,11 +5,16 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 
 #define MAPX 20
 #define MAPY 10
 #define BRICKY (MAPY / 2)
 #define DEFHP 1
+
+typedef enum {
+	PADDLEINC = 1
+} powerups;
 
 typedef struct {
 	int32_t x, y;
@@ -17,6 +22,8 @@ typedef struct {
 
 typedef struct {
 	int32_t hp;
+	powerups powerup;
+	uint8_t has_dropped;
 } cell;
 
 typedef struct {
@@ -72,10 +79,11 @@ void init_params(void *args) {
 	cycle->ball->pos.x--;
 	cycle->ball->pos.y--;
 	cycle->exit = 0;
+	srand(time(NULL));
 
 	for (int32_t i = 0; i < BRICKY; i++) {
 		for (int32_t j = 0; j < MAPX; j++) {
-			cell predef = {DEFHP};
+			cell predef = {DEFHP, (rand() % 4) == 0, 0};
 			cycle->bricks[i][j] = predef;
 		}
 	}
@@ -88,9 +96,9 @@ void draw_game(void *args) {
 			if (i < BRICKY && cycle->bricks[i][j].hp > 0) {
 				printf("-");
 			} else if (i == cycle->ball->pos.y && j == cycle->ball->pos.x) {
-				printf("O");
+				printf("\e[0;33mO\e[0;37m");
 			} else if (i == cycle->player->pos.y && j <= cycle->player->pos.x + cycle->player->size && j >= cycle->player->pos.x - cycle->player->size) {
-				printf("=");
+				printf("\e[0;31m=\e[0;37m");
 			} else {
 				printf(" ");
 			}
@@ -123,8 +131,16 @@ void *default_cycle(void *args) {
 
 		if (cycle->ball->pos.y + cycle->ball->vel.y < BRICKY && cycle->bricks[cycle->ball->pos.y + cycle->ball->vel.y][cycle->ball->pos.x + cycle->ball->vel.x].hp > 0) {
 			cycle->bricks[cycle->ball->pos.y + cycle->ball->vel.y][cycle->ball->pos.x + cycle->ball->vel.x].hp--;
+			if (cycle->bricks[cycle->ball->pos.y + cycle->ball->vel.y][cycle->ball->pos.x + cycle->ball->vel.x].hp == 0) {
+				cycle->bricks[cycle->ball->pos.y + cycle->ball->vel.y][cycle->ball->pos.x + cycle->ball->vel.x].has_dropped = 1;
+				switch (cycle->bricks[cycle->ball->pos.y + cycle->ball->vel.y][cycle->ball->pos.x + cycle->ball->vel.x].powerup) {
+					case PADDLEINC:
+						cycle->player->size++;
+						break;
+				}
+			}
 			cycle->ball->vel.y = -cycle->ball->vel.y;
-                }
+        }
 
 		if (cycle->ball->pos.y + cycle->ball->vel.y == cycle->player->pos.y + cycle->player->vel.y && cycle->ball->pos.x + cycle->ball->vel.x <= cycle->player->pos.x + cycle->player->vel.x + cycle->player->size && cycle->ball->pos.x + cycle->ball->vel.x >= cycle->player->pos.x + cycle->player->vel.x - cycle->player->size) {
 			cycle->ball->vel.y = -cycle->ball->vel.y;
@@ -152,7 +168,7 @@ void read_key(void *args) {
 	if (cycle->exit) {
 		return;
 	}
-	
+
 	if (cycle->player->pos.x + cycle->player->vel.x + cycle->player->size < MAPX && cycle->player->pos.x + cycle->player->vel.x - cycle->player->size >= 0 && cycle->player->vel.x != 0) {
 		printf("\033[H\n");
 		move(cycle->player);
